@@ -15,23 +15,28 @@ const GridLayoutComponent: React.FC = () => {
   const { calculationNodes } = useCalculationNodesStore();
   const { graphNodes } = useGraphNodesStore();
   const [layout, setLayout] = useState<any>([]);
+  const [graphNodeLayouts, setGraphNodeLayouts] = useState<any>([]);
 
   useEffect(() => {
     const calcNodeLayout = calculationNodes.map((node, index) => ({
       i: `${node.nodeId}-calculation`,
       x: (index % 4) * 3,
       y: Math.floor(index / 4) * 3 + Math.ceil(calculationNodes.length / 4) * 3,
-      w: 4,
-      h: 4,
+      w: 8,
+      h: 12,
     }));
 
-    const graphNodeLayout = graphNodes.map((node, index) => ({
+    const graphLayouts = graphNodes.map((node, index) => ({
       i: `${node.nodeId}-graph`,
       x: (index % 4) * 3,
       y: Math.floor(index / 4) * 3,
-      w: 3,
-      h: 3,
+      w: 8,
+      h: 12,
     }));
+
+    console.log(`Graph nodes: ${JSON.stringify(graphLayouts)}`);
+
+    setGraphNodeLayouts(graphLayouts);
 
     setLayout((prevLayout: any) => [
       ...prevLayout.filter(
@@ -41,8 +46,14 @@ const GridLayoutComponent: React.FC = () => {
           ) || graphNodes.find((node) => `${node.nodeId}-graph` === item.i),
       ),
       ...calcNodeLayout,
-      ...graphNodeLayout,
+      ...graphLayouts,
     ]);
+
+    setLayout([...graphLayouts, calculationNodes]);
+
+    console.log(
+      `layots: ${JSON.stringify(layout)}, graph: ${JSON.stringify(graphNodeLayouts)}`,
+    );
   }, [calculationNodes, graphNodes]);
 
   return (
