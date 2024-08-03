@@ -1,190 +1,137 @@
 "use client";
 import "react-resizable/css/styles.css";
 import { useOpcUaNodeStore } from "@/zustand/use-opcua-nodes.ts";
-import { useCallback, useEffect, useState } from "react";
-import ReactECharts from "echarts-for-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Checkbox } from "@/components/ui/checkbox";
+import Chart from "@/components/graph/time-series/chart.tsx";
+import { Separator } from "@/components/ui/separator.tsx";
+import { CheckedState } from "@radix-ui/react-checkbox";
 
 const TimeSeriesGraph = () => {
   const { opcUaNodes } = useOpcUaNodeStore();
+  const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [startDate, setStartDate] = useState("2021-06-06");
   const [endDate, setEndDate] = useState("2024-06-06");
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [dimensions, setDimensions] = useState({ width: 600, height: 400 });
 
-  const loadData = useCallback(async () => {
-    try {
-      const response = await fetch(
-        `${import.meta.env.VITE_BACKEND_URI}/api/v1/timeseries/123/${startDate.replace(
-          /-/g,
-          "/",
-        )}/${endDate.replace(/-/g, "/")}`,
-      );
-      console.log(`Response: ${import.meta.env.VITE_BACKEND_URI}`);
-      const data = await response.json();
-      const formattedData = data.map(([date, value]: [string, number]) => [
-        new Date(date).getTime(), // Convert date to timestamp
-        value,
-      ]);
-      setData(formattedData);
-      setLoading(false);
-    } catch (err) {
-      console.error("Error loading data:", err);
-    }
-  }, [startDate, endDate]);
+  const loadData = useCallback(
+    async (updatedNodeIds: string[]) => {
+      console.log(`Updating: ${updatedNodeIds.length}`);
+      if (updatedNodeIds.length < 1) {
+        setData([]);
+        return;
+      }
+      try {
+        const response = await fetch(
+          `${import.meta.env.VITE_BACKEND_URI}/api/v1/timeseries/${updatedNodeIds[0]}/${startDate.replace(
+            /-/g,
+            "/",
+          )}/${endDate.replace(/-/g, "/")}`,
+        );
+        console.log(`Response: ${import.meta.env.VITE_BACKEND_URI}`);
+        const data = await response.json();
+        const formattedData = data.map(([date, value]: [string, number]) => ({
+          x: new Date(date).getTime(), // Convert date to timestamp
+          y: value,
+        }));
+        setData(formattedData);
+      } catch (err) {
+        console.error("Error loading data:", err);
+      }
+    },
+    [startDate, endDate],
+  );
 
   useEffect(() => {
-    loadData();
-  }, [loadData]);
+    console.log(`Container ref: ${containerRef.current}`);
+    if (!containerRef.current) return;
 
-  const handleDateChange = (
-    e: React.ChangeEvent<HTMLInputElement>,
-    type: "start" | "end",
-  ) => {
-    const { value } = e.target;
-    if (type === "start") {
-      setStartDate(value);
+    const updateDimensions = (entries: ResizeObserverEntry[]) => {
+      for (let entry of entries) {
+        if (entry.contentRect) {
+          console.log(
+            `width: ${entry.contentRect.width}, height: ${entry.contentRect.height}`,
+          );
+        }
+        if (
+          entry.contentRect.width === dimensions.width &&
+          entry.contentRect.height === dimensions.height
+        ) {
+          return;
+        }
+        console.log(
+          `Changing, current width: ${dimensions.width}, height: ${dimensions.height}`,
+        );
+
+        return;
+        setDimensions({
+          width: entry.contentRect.width, // Adjust with padding/margin
+          height: entry.contentRect.height, // Adjust with padding/margin
+        });
+      }
+    };
+
+    const resizeObserver = new ResizeObserver(updateDimensions);
+    resizeObserver.observe(containerRef.current);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [containerRef]);
+
+  const handleNodeCheck = (checked: boolean, nodeId: string) => {
+    if (checked) {
+      // Add the nodeId if checked and not already in the list
+      setSelectedNodeIds((prevState) => {
+        if (!prevState.includes(nodeId)) {
+          const updatedNodeIds = [...prevState, nodeId];
+          console.log(`Updated NodeIds: ${updatedNodeIds}`);
+          loadData(updatedNodeIds);
+          return updatedNodeIds;
+        }
+        return prevState;
+      });
     } else {
-      setEndDate(value);
+      // Remove the nodeId if unchecked
+      setSelectedNodeIds((prevState) => {
+        const updatedNodeIds = prevState.filter((id) => id !== nodeId);
+        console.log(`Updated NodeIds: ${updatedNodeIds}`);
+        loadData(updatedNodeIds);
+        return updatedNodeIds;
+      });
     }
   };
 
-  const getOption = () => ({
-    title: {
-      text: "Time Series Analysis",
-      left: "center",
-    },
-    tooltip: {
-      trigger: "axis",
-      formatter: (params: any) => {
-        const [date, value] = params[0].value;
-        return `${new Date(date).toLocaleDateString()}<br/>Value: ${value.toFixed(
-          2,
-        )}`;
-      },
-    },
-    xAxis: [
-      {
-        type: "time",
-        boundaryGap: false,
-        gridIndex: 0, // Main chart
-        axisLabel: {
-          formatter: "{yyyy}-{MM}-{dd}",
-        },
-      },
-      {
-        type: "time",
-        boundaryGap: false,
-        gridIndex: 1, // Overview chart
-        show: false, // Hide x-axis in overview for cleaner look
-      },
-    ],
-    yAxis: [
-      {
-        type: "value",
-        gridIndex: 0, // Main chart
-        boundaryGap: [0, "20%"],
-      },
-      {
-        type: "value",
-        gridIndex: 1, // Overview chart
-        boundaryGap: [0, "20%"],
-        show: false, // Hide y-axis in overview
-      },
-    ],
-    grid: [
-      {
-        left: "10%",
-        right: "8%",
-        height: "60%", // Increase main chart height
-      },
-      {
-        left: "10%",
-        right: "8%",
-        top: "70%",
-        height: "15%", // Smaller height for overview
-      },
-    ],
-    dataZoom: [
-      {
-        type: "inside",
-        xAxisIndex: 0,
-        start: 0,
-        end: 100,
-      },
-      {
-        show: true,
-        xAxisIndex: 0,
-        type: "slider",
-        top: "85%",
-        start: 0,
-        end: 100,
-      },
-    ],
-    series: [
-      {
-        name: "Main Data",
-        type: "line",
-        smooth: true,
-        data: data,
-        xAxisIndex: 0,
-        yAxisIndex: 0,
-        color: "#5470C6", // Main chart color (blue)
-        markArea: {
-          itemStyle: {
-            color: "rgba(255, 173, 177, 0.4)",
-          },
-          data: [
-            [
-              {
-                name: "Zoomed Area",
-                xAxis: "2023/01/01",
-              },
-              {
-                xAxis: "2023/12/31",
-              },
-            ],
-          ],
-        },
-      },
-    ],
-  });
-
-  if (loading) return <div>Loading...</div>;
-
   return (
-    <div className="flex flex-col bg-yellow-200 border-dark border-2">
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex space-x-3">
-          <label>
-            Start Date:
-            <input
-              type="date"
-              value={startDate}
-              onChange={(e) => handleDateChange(e, "start")}
-              className="ml-2 border rounded px-2 py-1"
-            />
-          </label>
-          <label>
-            End Date:
-            <input
-              type="date"
-              value={endDate}
-              onChange={(e) => handleDateChange(e, "end")}
-              className="ml-2 border rounded px-2 py-1"
-            />
-          </label>
-          <button
-            onClick={loadData}
-            className="px-4 py-2 bg-blue-500 text-white rounded"
-          >
-            Load Data
-          </button>
+    <div
+      ref={containerRef}
+      className="flex flex-col border-dark border-2 overflow-hidden"
+    >
+      <div className="flex justify-between mb-4">
+        <div className="flex flex-col text-sm">
+          {opcUaNodes.map((node, index) => (
+            <div key={index} className="flex flex-col">
+              <div className="flex justify-between space-x-2 items-center">
+                <p>{node.nodeName}</p>
+                <Checkbox
+                  onCheckedChange={(checked: boolean) =>
+                    handleNodeCheck(checked, node.nodeId)
+                  }
+                />
+              </div>
+              <Separator />
+            </div>
+          ))}
         </div>
+        <Chart
+          data={data}
+          height={dimensions.height}
+          width={dimensions.width}
+        />
       </div>
-      <ReactECharts
-        option={getOption()}
-        style={{ height: 500, width: "100%" }}
-      />
       <div className="flex flex-col space-y-3 mt-4">
         <p>Calculation area</p>
       </div>
